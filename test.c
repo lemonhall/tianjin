@@ -114,6 +114,10 @@ const struct sniff_ethernet *ethernet; /* The ethernet header */
 const struct sniff_ip *ip; /* The IP header */
 const struct sniff_tcp *tcp; /* The TCP header */
 const char *payload; /* Packet payload */
+const char *payload_METHOD="GET / HTTP";
+char payload_METHOD_buffer[10];
+char payload_HOST[20];
+int i,cmp1;
 
 u_int size_ip;
 u_int size_tcp;
@@ -173,7 +177,20 @@ while(1){
 	printf("+--------------------------------------+\n");
 	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
 
-	printf("%s",payload);
+  	//GET / HTTP
+ 	for(i=0;i<10;i++){
+  		payload_METHOD_buffer[i]=payload[i];
+  	}
+	for(i=0;i<10;i++){
+	  if(payload_METHOD_buffer[i]==payload_METHOD[i]){
+	  	cmp1=1;
+	  }else{
+		cmp1=0;
+	  }
+	}
+  	if(cmp1==1){
+		printf("%s",payload);
+	}
  
  	iphdr = (struct ip *)(packet+14);
  	tcphdr = (struct tcphdr *)(packet+14+20);
