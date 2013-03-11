@@ -1,0 +1,4 @@
+.test.c.swp
+*.out
+token.c
+tcphijack

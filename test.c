@@ -243,6 +243,7 @@ return 0;
 int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt){
 
   static int i=0;
+  //属于魔法值，要注意
   int one=1; /* R.Stevens says we need this variable for the setsockopt call */ 
 
   /* Raw socket file descriptor */ 
@@ -272,16 +273,18 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   char *payload=(char *)(packet+payload_offset);
 
   /* TPC Pseudoheader (used in checksum)    */
+  //tcp的伪头部，用来计算checksum
   tcp_phdr_t pseudohdr;            
 
+  //tcp的伪头+实际头部，用来计算checksum的
   /* TCP Pseudoheader + TCP actual header used for computing the checksum */
   char tcpcsumblock[ sizeof(tcp_phdr_t) + TCPSYN_LEN ];
 
   /* Although we are creating our own IP packet with the destination address */
   /* on it, the sendto() system call requires the sockaddr_in structure */
-  struct sockaddr_in dstaddr;  
- 
   //用0大量填充内存
+  struct sockaddr_in dstaddr; 
+  
   memset(&pseudohdr,0,sizeof(tcp_phdr_t));
   memset(&packet, 0, sizeof(packet));
   memset(&dstaddr, 0, sizeof(dstaddr));   
@@ -327,7 +330,7 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   tcpheader->th_ack = htonl(1);   /* Acknowledgement Number                  */
   tcpheader->th_x2 = 0;           /* Variable in 4 byte blocks. (Deprecated) */
   tcpheader->th_off = 5;      /* Segment offset (Lenght of the header)   */
-  tcpheader->th_flags = TH_ACK;   /* TCP Flags. We set the Reset Flag        */
+  tcpheader->th_flags = TH_ACK;   /* 原来这里设置成了RST，我们不能这么干        */
   tcpheader->th_win = htons(4500) + rand()%1000;/* Window size               */
   tcpheader->th_urp = 0;          /* Urgent pointer.                         */
   tcpheader->th_sport = src_prt;  /* Source Port                             */

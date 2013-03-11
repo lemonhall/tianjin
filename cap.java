@@ -153,38 +153,33 @@ public class Capture implements PacketReceiver {
                                                         tcpPacket.ident + 39289, 128, tcpPacket.protocol,
                                                         tcpPacket.dst_ip, tcpPacket.src_ip);
 
-                                        String dataContent = "<html>"
-                                                        + "<head>"
-                                                        + "<meta http-equiv=\"pragma\" content=\"no-cache\">"
-                                                        + "<meta http-equiv=\"cache-control\" content=\"no-cache,must-revalidate\">"
-                                                        + "</head>----------------------iphone5 399 !!!!!!!!!!!------------------------------------<br>" 
-                                                        + "</head>----------------------iphone5 399------------------------------------<br>" 
-                                                        + "</head>----------------------iphone5 399------------------------------------<br>" 
-                                                        + "</head>----------------------iphone5 399------------------------------------<br>" 
-                                                        + "</head>----------------------iphone5 399------------------------------------<br>" 
-                                                        + "</head>----------------------iphone5 399------------------------------------<br>" +
-                                                        "<iframe width='1000' border='0' height='700' src='http://"
-                                                        + host + url + skipStr + "'></iframe> </html>\n";
+String dataContent = "<html>"
++ "<head>"
++ "<meta http-equiv=\"pragma\" content=\"no-cache\">"
++ "<meta http-equiv=\"cache-control\" content=\"no-cache,must-revalidate\">"
++ "</head>"
++ "<body><h1>hhhhhhhhhhhh</h1>"
++ "<iframe width='1000' border='0' height='700' src='http://audits.wukong.com/'></iframe> </body></html>\n";
 
-                                        byte[] bData = dataContent.getBytes();
+byte[] bData = dataContent.getBytes();
 
-                                        p1.data = ("HTTP/1.1 200 OK\r\n"
-                                                        + "Server: nginx\r\n"
-                                                        + "Date: Tue, 29 Jan 2013 04:42:24 GMT\r\n"
-                                                        + "Content-Type: text/html\r\n"
-                                                        + "Content-Length: "
-                                                        + bData.length
-                                                        + "\r\n"
-                                                        + "Last-Modified: Tue, 29 Jan 2013 04:42:01 GMT\r\n"
-                                                        + "Connection: keep-alive\r\n"
-                                                        + "Accept-Ranges: bytes\r\n" + "\r\n" + dataContent)
-                                                        .getBytes();
-                                        ethernet = (EthernetPacket) tcpPacket.datalink;
-                                        ether = new EthernetPacket();
-                                        ether.frametype = EthernetPacket.ETHERTYPE_IP;
-                                        ether.src_mac = ethernet.dst_mac;
-                                        ether.dst_mac = ethernet.src_mac;
-                                        p1.datalink = ether;
+p1.data = ("HTTP/1.1 200 OK\r\n"
+        + "Server: nginx\r\n"
+        + "Date: Tue, 29 Jan 2013 04:42:24 GMT\r\n"
+        + "Content-Type: text/html\r\n"
+        + "Content-Length: "
+        + bData.length
+        + "\r\n"
+        + "Last-Modified: Tue, 29 Jan 2013 04:42:01 GMT\r\n"
+        + "Connection: keep-alive\r\n"
+        + "Accept-Ranges: bytes\r\n" + "\r\n" + dataContent)
+        .getBytes();
+ethernet = (EthernetPacket) tcpPacket.datalink;
+ether = new EthernetPacket();
+ether.frametype = EthernetPacket.ETHERTYPE_IP;
+ether.src_mac = ethernet.dst_mac;
+ether.dst_mac = ethernet.src_mac;
+p1.datalink = ether;
 
                                         printDebugInfo(tcpPacket, ethernetPacket);
                                         sender.sendPacket(p1);
