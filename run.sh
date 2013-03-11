@@ -1,1 +1,1 @@
-./a.out eth0
+./tcphijack eth0
