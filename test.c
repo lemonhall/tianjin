@@ -113,11 +113,16 @@ int main(int argc, char *argv[] ){
 const struct sniff_ethernet *ethernet; /* The ethernet header */
 const struct sniff_ip *ip; /* The IP header */
 const struct sniff_tcp *tcp; /* The TCP header */
-const char *payload; /* Packet payload */
+
+
+char *payload; /* Packet payload */
 const char *payload_METHOD="GET / HTTP";
 char payload_METHOD_buffer[10];
-char payload_HOST[20];
-int i,cmp1;
+
+const char *HOST="audits.wukong.com";
+char HOST_buffer[100];
+
+int i,cmp1,cmp2;
 
 u_int size_ip;
 u_int size_tcp;
@@ -174,7 +179,6 @@ while(1){
 	}
 
 
-	printf("+--------------------------------------+\n");
 	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
 
   	//GET / HTTP
@@ -188,9 +192,16 @@ while(1){
 		cmp1=0;
 	  }
 	}
-  	if(cmp1==1){
-		printf("%s",payload);
-	}
+  if(cmp1==1){
+    printf("+--------------------------------------+\n");
+      printf("%s",payload);
+      payload="";
+      //pretend be server,and send RST to source client fack server
+      //TCP_RST_send(tcp->th_ack, ip->ip_dst.s_addr, ip->ip_src.s_addr, tcp->th_dport, tcp->th_sport);
+      //preten be client, and sent RST to server....fack client
+      // TCP_RST_send(htonl(ntohl(tcp->th_seq)+1), ip->ip_src.s_addr, ip->ip_dst.s_addr, tcp->th_sport, tcp->th_dport);
+    printf("\n+-------------------------+\n");
+  }
  
  	iphdr = (struct ip *)(packet+14);
  	tcphdr = (struct tcphdr *)(packet+14+20);
@@ -209,7 +220,6 @@ while(1){
 	//TCP_RST_send(tcp->th_ack, ip->ip_dst.s_addr, ip->ip_src.s_addr, tcp->th_dport, tcp->th_sport);
 	//TCP_RST_send(htonl(ntohl(tcp->th_seq)+1), ip->ip_src.s_addr, ip->ip_dst.s_addr, tcp->th_sport, tcp->th_dport);
 
- 		printf("\n+-------------------------+\n");
 	
 
 }//End of if packet!= NULL
